@@ -1,0 +1,16 @@
+[package]
+name = "acme"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = "1.0.229"
+
+[features]
+# auto-managed by cargo-forward-flags
+# <forward serde exclude="rc,unstable" prefix="serde-">
+serde-alloc = ["serde/alloc"]
+serde-derive = ["serde/derive"]
+serde-serde_derive = ["serde/serde_derive"]
+serde-std = ["serde/std"]
+# </forward> 

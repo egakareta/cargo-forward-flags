@@ -1,0 +1,10 @@
+[package]
+name = "cargo-forward-flags"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+cargo_metadata = "0.23.1"
+clap = { version = "4.6.7", features = ["derive"] }
+toml = "1.1.8"

@@ -1,0 +1,47 @@
+[package]
+name = "contoso"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.53.2", optional = true }
+toml = "1.1.8"
+
+[features]
+# <forward tokio>
+bytes = ["tokio?/bytes"]
+fs = ["tokio?/fs"]
+full = ["tokio?/full"]
+io-std = ["tokio?/io-std"]
+io-uring = ["tokio?/io-uring"]
+io-util = ["tokio?/io-util"]
+libc = ["tokio?/libc"]
+macros = ["tokio?/macros"]
+mio = ["tokio?/mio"]
+net = ["tokio?/net"]
+parking_lot = ["tokio?/parking_lot"]
+process = ["tokio?/process"]
+rt = ["tokio?/rt"]
+rt-multi-thread = ["tokio?/rt-multi-thread"]
+schedule-latency = ["tokio?/schedule-latency"]
+signal = ["tokio?/signal"]
+signal-hook-registry = ["tokio?/signal-hook-registry"]
+socket2 = ["tokio?/socket2"]
+sync = ["tokio?/sync"]
+taskdump = ["tokio?/taskdump"]
+test-util = ["tokio?/test-util"]
+time = ["tokio?/time"]
+tokio-macros = ["tokio?/tokio-macros"]
+tracing = ["tokio?/tracing"]
+windows-sys = ["tokio?/windows-sys"]
+# </forward>
+# <forward toml prefix="toml_">
+toml_debug = ["toml/debug"]
+toml_display = ["toml/display"]
+toml_fast_hash = ["toml/fast_hash"]
+toml_parse = ["toml/parse"]
+toml_preserve_order = ["toml/preserve_order"]
+toml_serde = ["toml/serde"]
+toml_std = ["toml/std"]
+toml_unbounded = ["toml/unbounded"]
+# </forward>
