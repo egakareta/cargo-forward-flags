@@ -12,6 +12,7 @@ pub struct ForwardBlock {
 pub struct ParsedManifest {
     pub blocks: Vec<ForwardBlock>,
     pub manual_features: BTreeSet<String>,
+    pub has_features_table: bool,
     pub newline: &'static str,
 }
 
@@ -91,15 +92,23 @@ pub fn parse_manifest(text: &str) -> Result<ParsedManifest> {
     let sanitized = blank_managed_regions(text, &blocks);
     let document: toml::Value = toml::from_str(&sanitized)
         .context("manifest is not valid TOML outside forwarding blocks")?;
-    let features = document
-        .get("features")
-        .and_then(toml::Value::as_table)
-        .context("forwarding blocks require a top-level `[features]` table")?;
-    let manual_features = features.keys().cloned().collect();
+    let features = match document.get("features") {
+        Some(features) => Some(
+            features
+                .as_table()
+                .context("forwarding blocks require a top-level `[features]` table")?,
+        ),
+        None if blocks.is_empty() => None,
+        None => bail!("forwarding blocks require a top-level `[features]` table"),
+    };
+    let manual_features = features
+        .map(|features| features.keys().cloned().collect())
+        .unwrap_or_default();
 
     Ok(ParsedManifest {
         blocks,
         manual_features,
+        has_features_table: features.is_some(),
         newline,
     })
 }
@@ -310,6 +319,15 @@ mod tests {
         ] {
             assert!(parse_manifest(text).is_err(), "accepted {text}");
         }
+    }
+
+    #[test]
+    fn allows_manifests_without_features_when_there_are_no_forwarding_blocks() {
+        let parsed = parse_manifest("[package]\nname = \"x\"\n").unwrap();
+
+        assert!(parsed.blocks.is_empty());
+        assert!(parsed.manual_features.is_empty());
+        assert!(!parsed.has_features_table);
     }
 
     #[test]

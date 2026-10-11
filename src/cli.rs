@@ -46,6 +46,9 @@ pub fn run() -> Result<()> {
             manifest_path.display()
         )
     })?;
+    if !parsed.has_features_table {
+        return Ok(());
+    }
     let directives: Vec<_> = parsed
         .blocks
         .iter()

@@ -169,6 +169,22 @@ fn check_and_dry_run_do_not_modify_and_collisions_are_errors() {
 }
 
 #[test]
+fn manifest_without_features_table_is_a_noop() {
+    let fixture = Fixture::new();
+    let original = "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nmissing = { path = \"../missing\" }\n";
+    fixture.write("app/Cargo.toml", original);
+
+    let output = fixture.command(&[]);
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(original, fs::read_to_string(fixture.manifest()).unwrap());
+}
+
+#[test]
 fn preserves_crlf_and_supports_cargo_subcommand_argv_convention() {
     let fixture = Fixture::new();
     add_feature_dependencies(&fixture);
