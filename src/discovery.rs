@@ -249,13 +249,20 @@ fn isolated_metadata(
         .current_dir(workspace_root)
         .features(cargo_metadata::CargoOpt::AllFeatures);
     let metadata = command.exec().context("isolated cargo metadata failed")?;
-    let temporary_manifest = temporary.0.join("Cargo.toml").canonicalize()?;
-    let root_id = metadata
+    let [root_id] = metadata.workspace_members.as_slice() else {
+        bail!(
+            "isolated Cargo metadata returned {} workspace packages, expected one",
+            metadata.workspace_members.len()
+        );
+    };
+    let root_id = root_id.clone();
+    if !metadata
         .packages
         .iter()
-        .find(|package| package.manifest_path.as_std_path() == temporary_manifest)
-        .map(|package| package.id.clone())
-        .context("isolated Cargo metadata did not return its root package")?;
+        .any(|package| package.id == root_id)
+    {
+        bail!("isolated Cargo metadata did not return its root package");
+    }
     Ok((metadata, root_id))
 }
 
