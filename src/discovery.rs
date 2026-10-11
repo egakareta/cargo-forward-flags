@@ -17,31 +17,100 @@ pub struct DependencyFeatures {
     pub optional: bool,
 }
 
-pub fn workspace_manifests(manifest_path: &Path) -> Result<Vec<PathBuf>> {
-    let mut command = MetadataCommand::new();
-    command.manifest_path(manifest_path);
-    command.no_deps();
-    let metadata = command.exec().with_context(|| {
-        format!(
-            "could not inspect workspace for manifest `{}` using `cargo metadata --no-deps`",
-            manifest_path.display()
-        )
-    })?;
+enum WorkspaceResolution {
+    Resolved(Box<Metadata>),
+    Failed(String),
+}
 
-    let mut manifests: Vec<_> = metadata
-        .packages
-        .iter()
-        .filter(|package| metadata.workspace_members.contains(&package.id))
-        .map(|package| package.manifest_path.as_std_path().to_path_buf())
-        .collect();
-    manifests.sort();
-    if manifests.is_empty() {
-        bail!(
-            "Cargo metadata returned no workspace packages for manifest `{}`",
-            manifest_path.display()
-        );
+pub struct Workspace {
+    manifests: Vec<PathBuf>,
+    /// `cargo metadata --no-deps` output is also enough to build isolated manifests when
+    /// generated features make the regular workspace resolution fail.
+    package_metadata: Metadata,
+    resolution: Option<WorkspaceResolution>,
+}
+
+impl Workspace {
+    pub fn new(manifest_path: &Path) -> Result<Self> {
+        let mut command = MetadataCommand::new();
+        command.manifest_path(manifest_path);
+        command.no_deps();
+        let package_metadata = command.exec().with_context(|| {
+            format!(
+                "could not inspect workspace for manifest `{}` using `cargo metadata --no-deps`",
+                manifest_path.display()
+            )
+        })?;
+
+        let mut manifests: Vec<_> = package_metadata
+            .packages
+            .iter()
+            .filter(|package| package_metadata.workspace_members.contains(&package.id))
+            .map(|package| package.manifest_path.as_std_path().to_path_buf())
+            .collect();
+        manifests.sort();
+        if manifests.is_empty() {
+            bail!(
+                "Cargo metadata returned no workspace packages for manifest `{}`",
+                manifest_path.display()
+            );
+        }
+
+        Ok(Self {
+            manifests,
+            package_metadata,
+            resolution: None,
+        })
     }
-    Ok(manifests)
+
+    pub fn manifests(&self) -> &[PathBuf] {
+        &self.manifests
+    }
+
+    pub fn discover(
+        &mut self,
+        manifest_path: &Path,
+        directives: &[Directive],
+        source: &str,
+        parsed: &ParsedManifest,
+    ) -> Result<Vec<DependencyFeatures>> {
+        if self.resolution.is_none() {
+            let mut command = MetadataCommand::new();
+            // One resolved workspace graph contains the dependency features for every member.
+            command
+                .manifest_path(manifest_path)
+                .features(cargo_metadata::CargoOpt::AllFeatures);
+            self.resolution = Some(match command.exec() {
+                Ok(metadata) => WorkspaceResolution::Resolved(Box::new(metadata)),
+                Err(error) => WorkspaceResolution::Failed(format!("{error:#}")),
+            });
+        }
+
+        match self
+            .resolution
+            .as_ref()
+            .expect("resolution was initialized")
+        {
+            WorkspaceResolution::Resolved(metadata) => {
+                discover_from_metadata(manifest_path, directives, metadata, None)
+            }
+            WorkspaceResolution::Failed(original_error) => {
+                let (metadata, root_id) = isolated_metadata(
+                    manifest_path,
+                    source,
+                    parsed,
+                    Some(&self.package_metadata),
+                )
+                .with_context(|| {
+                    format!(
+                        "could not resolve dependencies for manifest `{}` using `cargo metadata --all-features`; retrying without generated forwarding features also failed: {original_error}",
+                        manifest_path.display()
+                    )
+                })?;
+                discover_from_metadata(manifest_path, directives, &metadata, Some(&root_id))
+            }
+        }
+    }
 }
 
 pub fn discover(
@@ -55,20 +124,27 @@ pub fn discover(
     // Activating all features makes Cargo include optional dependency packages in the
     // resolved graph. We only read package metadata; no build is performed.
     command.features(cargo_metadata::CargoOpt::AllFeatures);
-    let (metadata, isolated_root_id) = match command.exec() {
-        Ok(metadata) => (metadata, None),
+    match command.exec() {
+        Ok(metadata) => discover_from_metadata(manifest_path, directives, &metadata, None),
         Err(original_error) => {
-            let (metadata, root_id) = isolated_metadata(manifest_path, source, parsed)
+            let (metadata, root_id) = isolated_metadata(manifest_path, source, parsed, None)
                 .with_context(|| {
                     format!(
                         "could not resolve dependencies for manifest `{}` using `cargo metadata --all-features`; retrying without generated forwarding features also failed: {original_error:#}",
                         manifest_path.display()
                     )
                 })?;
-            (metadata, Some(root_id))
+            discover_from_metadata(manifest_path, directives, &metadata, Some(&root_id))
         }
-    };
+    }
+}
 
+fn discover_from_metadata(
+    manifest_path: &Path,
+    directives: &[Directive],
+    metadata: &Metadata,
+    isolated_root_id: Option<&PackageId>,
+) -> Result<Vec<DependencyFeatures>> {
     let manifest = manifest_path.canonicalize().with_context(|| {
         format!(
             "could not resolve manifest path `{}`",
@@ -79,7 +155,7 @@ pub fn discover(
         Some(root_id) => metadata
             .packages
             .iter()
-            .find(|package| package.id == root_id),
+            .find(|package| &package.id == root_id),
         None => metadata
             .packages
             .iter()
@@ -110,16 +186,24 @@ fn isolated_metadata(
     manifest_path: &Path,
     source: &str,
     parsed: &ParsedManifest,
+    package_metadata: Option<&Metadata>,
 ) -> Result<(Metadata, PackageId)> {
-    let mut no_deps = MetadataCommand::new();
-    no_deps.manifest_path(manifest_path);
-    no_deps.no_deps();
-    let workspace_metadata = no_deps.exec().with_context(|| {
-        format!(
-            "could not inspect manifest `{}` without resolving dependencies",
-            manifest_path.display()
-        )
-    })?;
+    let owned_package_metadata = if package_metadata.is_none() {
+        let mut no_deps = MetadataCommand::new();
+        no_deps.manifest_path(manifest_path);
+        no_deps.no_deps();
+        Some(no_deps.exec().with_context(|| {
+            format!(
+                "could not inspect manifest `{}` without resolving dependencies",
+                manifest_path.display()
+            )
+        })?)
+    } else {
+        None
+    };
+    let workspace_metadata = package_metadata
+        .or(owned_package_metadata.as_ref())
+        .expect("package metadata is available");
 
     let manifest = manifest_path.canonicalize().with_context(|| {
         format!(

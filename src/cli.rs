@@ -47,16 +47,20 @@ pub fn run() -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("Cargo.toml"));
     let manifest_path = fs::canonicalize(&manifest_path)
         .with_context(|| format!("could not find manifest `{}`", manifest_path.display()))?;
-    let manifest_paths = if cli.workspace {
-        discovery::workspace_manifests(&manifest_path)?
+    let mut workspace = if cli.workspace {
+        Some(discovery::Workspace::new(&manifest_path)?)
     } else {
-        vec![manifest_path]
+        None
     };
+    let manifest_paths = workspace
+        .as_ref()
+        .map(|workspace| workspace.manifests().to_vec())
+        .unwrap_or_else(|| vec![manifest_path]);
 
     let mut prepared = Vec::new();
     let mut failures = Vec::new();
     for path in &manifest_paths {
-        match prepare_manifest(path) {
+        match prepare_manifest(path, workspace.as_mut()) {
             Ok(Some(update)) => prepared.push(update),
             Ok(None) => {}
             Err(error) => failures.push((path.clone(), error)),
@@ -141,7 +145,10 @@ struct PreparedManifest {
     updated: String,
 }
 
-fn prepare_manifest(path: &Path) -> Result<Option<PreparedManifest>> {
+fn prepare_manifest(
+    path: &Path,
+    workspace: Option<&mut discovery::Workspace>,
+) -> Result<Option<PreparedManifest>> {
     let original = fs::read_to_string(path)
         .with_context(|| format!("could not read manifest `{}`", path.display()))?;
     let parsed = manifest::parse_manifest(&original).with_context(|| {
@@ -158,7 +165,10 @@ fn prepare_manifest(path: &Path) -> Result<Option<PreparedManifest>> {
         .iter()
         .map(|block| block.directive.clone())
         .collect();
-    let dependencies = discovery::discover(path, &directives, &original, &parsed)?;
+    let dependencies = match workspace {
+        Some(workspace) => workspace.discover(path, &directives, &original, &parsed)?,
+        None => discovery::discover(path, &directives, &original, &parsed)?,
+    };
     let generated = generate::generate(&directives, &dependencies, &parsed.manual_features)?;
     let updated = manifest::rewrite(&original, &parsed, &generated)?;
 
