@@ -222,7 +222,7 @@ fn workspace_mode_updates_and_checks_every_member_manifest() {
 
     let check = fixture.command_for(&["--workspace", "--check"], &workspace_manifest);
     assert!(!check.status.success());
-    let diff = String::from_utf8_lossy(&check.stdout);
+    let diff = String::from_utf8_lossy(&check.stdout).replace('\\', "/");
     assert!(diff.contains("app/Cargo.toml"), "{diff}");
     assert!(diff.contains("library/Cargo.toml"), "{diff}");
 }
