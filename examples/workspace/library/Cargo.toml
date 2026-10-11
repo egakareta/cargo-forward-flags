@@ -1,0 +1,13 @@
+[package]
+name = "workspace-library"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+source = { workspace = true }
+
+[features]
+# <forward source prefix="library-">
+library-alpha = ["source/alpha"]
+library-beta = ["source/beta"]
+# </forward>

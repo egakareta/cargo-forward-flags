@@ -31,10 +31,14 @@ impl Fixture {
     }
 
     fn command(&self, args: &[&str]) -> Output {
+        self.command_for(args, &self.manifest())
+    }
+
+    fn command_for(&self, args: &[&str], manifest: &Path) -> Output {
         Command::new(env!("CARGO_BIN_EXE_cargo-forward-flags"))
             .args(args)
             .arg("--manifest-path")
-            .arg(self.manifest())
+            .arg(manifest)
             .output()
             .unwrap()
     }
@@ -133,6 +137,69 @@ fn workspace_inherited_dependency_is_discovered() {
 }
 
 #[test]
+fn workspace_mode_updates_and_checks_every_member_manifest() {
+    let fixture = Fixture::new();
+    fixture.write(
+        "Cargo.toml",
+        "[workspace]\nmembers = [\"app\", \"library\", \"feature-source\"]\nresolver = \"3\"\n\n[workspace.dependencies]\nsource = { package = \"feature-source\", path = \"feature-source\" }\n",
+    );
+    fixture.write(
+        "feature-source/Cargo.toml",
+        "[package]\nname = \"feature-source\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[features]\nalpha = []\nbeta = []\n",
+    );
+    fixture.write("feature-source/src/lib.rs", "pub fn value() {}\n");
+    fixture.write(
+        "app/Cargo.toml",
+        "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nsource = { workspace = true, optional = true }\n\n[features]\n# <forward source prefix=\"app-\">\n# </forward>\n",
+    );
+    fixture.write("app/src/main.rs", "fn main() {}\n");
+    fixture.write(
+        "library/Cargo.toml",
+        "[package]\nname = \"library\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nsource = { workspace = true }\n\n[features]\n# <forward source prefix=\"library-\">\n# </forward>\n",
+    );
+    fixture.write("library/src/lib.rs", "pub fn value() {}\n");
+    let workspace_manifest = fixture.0.join("Cargo.toml");
+
+    let output = fixture.command_for(&["--workspace"], &workspace_manifest);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let app = fs::read_to_string(fixture.0.join("app/Cargo.toml")).unwrap();
+    let library = fs::read_to_string(fixture.0.join("library/Cargo.toml")).unwrap();
+    assert!(app.contains("app-alpha = [\"source?/alpha\"]"));
+    assert!(app.contains("app-beta = [\"source?/beta\"]"));
+    assert!(library.contains("library-alpha = [\"source/alpha\"]"));
+    assert!(library.contains("library-beta = [\"source/beta\"]"));
+
+    let check = fixture.command_for(&["--workspace", "--check"], &workspace_manifest);
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+
+    for path in ["app/Cargo.toml", "library/Cargo.toml"] {
+        let manifest = fixture.0.join(path);
+        let contents = fs::read_to_string(&manifest).unwrap();
+        let empty = contents
+            .lines()
+            .filter(|line| !line.contains(" = [\"source"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        fs::write(manifest, empty).unwrap();
+    }
+
+    let check = fixture.command_for(&["--workspace", "--check"], &workspace_manifest);
+    assert!(!check.status.success());
+    let diff = String::from_utf8_lossy(&check.stdout);
+    assert!(diff.contains("app/Cargo.toml"), "{diff}");
+    assert!(diff.contains("library/Cargo.toml"), "{diff}");
+}
+
+#[test]
 fn check_and_dry_run_do_not_modify_and_collisions_are_errors() {
     let fixture = Fixture::new();
     add_feature_dependencies(&fixture);
@@ -220,6 +287,7 @@ fn clap_help_documents_directives_and_check_modes_are_exclusive() {
     assert!(help.status.success());
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("--manifest-path"));
+    assert!(help.contains("--workspace"));
     assert!(help.contains("# <forward dependency"));
     assert!(help.contains("default feature is always omitted"));
 

@@ -1,0 +1,13 @@
+[package]
+name = "workspace-app"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+source = { workspace = true, optional = true }
+
+[features]
+# <forward source prefix="app-">
+app-alpha = ["source?/alpha"]
+app-beta = ["source?/beta"]
+# </forward>

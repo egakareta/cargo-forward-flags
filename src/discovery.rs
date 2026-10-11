@@ -1,12 +1,42 @@
 use crate::directive::Directive;
 use anyhow::{Context, Result, bail};
 use cargo_metadata::{MetadataCommand, Package};
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Clone)]
 pub struct DependencyFeatures {
     pub names: BTreeSet<String>,
     pub optional: bool,
+}
+
+pub fn workspace_manifests(manifest_path: &Path) -> Result<Vec<PathBuf>> {
+    let mut command = MetadataCommand::new();
+    command.manifest_path(manifest_path);
+    command.no_deps();
+    let metadata = command.exec().with_context(|| {
+        format!(
+            "could not inspect workspace for manifest `{}` using `cargo metadata --no-deps`",
+            manifest_path.display()
+        )
+    })?;
+
+    let mut manifests: Vec<_> = metadata
+        .packages
+        .iter()
+        .filter(|package| metadata.workspace_members.contains(&package.id))
+        .map(|package| package.manifest_path.as_std_path().to_path_buf())
+        .collect();
+    manifests.sort();
+    if manifests.is_empty() {
+        bail!(
+            "Cargo metadata returned no workspace packages for manifest `{}`",
+            manifest_path.display()
+        );
+    }
+    Ok(manifests)
 }
 
 pub fn discover(manifest_path: &Path, directives: &[Directive]) -> Result<Vec<DependencyFeatures>> {

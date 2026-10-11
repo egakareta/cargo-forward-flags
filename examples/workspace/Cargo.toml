@@ -1,0 +1,6 @@
+[workspace]
+members = ["app", "library", "feature-source"]
+resolver = "3"
+
+[workspace.dependencies]
+source = { package = "feature-source", path = "feature-source" }
