@@ -158,7 +158,7 @@ fn prepare_manifest(path: &Path) -> Result<Option<PreparedManifest>> {
         .iter()
         .map(|block| block.directive.clone())
         .collect();
-    let dependencies = discovery::discover(path, &directives)?;
+    let dependencies = discovery::discover(path, &directives, &original, &parsed)?;
     let generated = generate::generate(&directives, &dependencies, &parsed.manual_features)?;
     let updated = manifest::rewrite(&original, &parsed, &generated)?;
 

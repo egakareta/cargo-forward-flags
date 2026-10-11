@@ -173,6 +173,34 @@ fn workspace_mode_updates_and_checks_every_member_manifest() {
     assert!(library.contains("library-alpha = [\"source/alpha\"]"));
     assert!(library.contains("library-beta = [\"source/beta\"]"));
 
+    // A stale generated feature is itself enough to make `cargo metadata --all-features`
+    // fail, so processing must retry with the managed block removed and prune it.
+    let stale_library = library.replace(
+        "# </forward>",
+        "library-gamma = [\"source/gamma\"]\n# </forward>",
+    );
+    fs::write(fixture.0.join("library/Cargo.toml"), stale_library).unwrap();
+    let dry_run = fixture.command_for(&["--workspace", "--dry-run"], &workspace_manifest);
+    assert!(
+        dry_run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&dry_run.stderr)
+    );
+    assert!(
+        fs::read_to_string(fixture.0.join("library/Cargo.toml"))
+            .unwrap()
+            .contains("library-gamma")
+    );
+
+    let prune = fixture.command_for(&["--workspace"], &workspace_manifest);
+    assert!(
+        prune.status.success(),
+        "{}",
+        String::from_utf8_lossy(&prune.stderr)
+    );
+    let library = fs::read_to_string(fixture.0.join("library/Cargo.toml")).unwrap();
+    assert!(!library.contains("library-gamma"));
+
     let check = fixture.command_for(&["--workspace", "--check"], &workspace_manifest);
     assert!(
         check.status.success(),
