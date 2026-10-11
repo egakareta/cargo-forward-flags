@@ -2,6 +2,12 @@
 name = "cargo-forward-flags"
 version = "0.1.0"
 edition = "2024"
+description = "Generate Cargo feature forwarding declarations"
+readme = "README.md"
+repository = "https://github.com/egakareta/cargo-forward-flags"
+license = "MIT"
+keywords = ["cargo", "cargo-subcommand", "dependencies", "features"]
+categories = ["development-tools::cargo-plugins"]
 
 [dependencies]
 anyhow = "1.0.104"
