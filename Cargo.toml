@@ -1,6 +1,6 @@
 [package]
 name = "cargo-forward-flags"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 description = "Generate Cargo feature forwarding declarations"
 readme = "README.md"
