@@ -45,3 +45,9 @@ Supported forms:
 # <forward dependency prefix="foo-" exclude="std,rc">
 # </forward>
 ```
+
+## License
+
+Dual-licensed under the [MIT License](https://opensource.org/licenses/MIT) and the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0). Choose whichever you prefer.
+
+By submitting a contribution, including code submitted through a pull request, you agree that your contribution will be dual-licensed under the MIT License and the Apache License, Version 2.0, without any additional terms or conditions.
